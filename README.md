@@ -85,7 +85,7 @@ mnist-drawing-app/
 ## 🚀 Getting Started
 
 ### Option 1: Use the Live Demo
-Simply visit the [live demo link](#) and start drawing!
+Simply visit **[https://cro-nguyen.github.io/mnist-drawing-app/](https://cro-nguyen.github.io/mnist-drawing-app/)** and start drawing!
 
 ### Option 2: Run Locally
 
