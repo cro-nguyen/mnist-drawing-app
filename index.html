@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MNIST Digit Recognition</title>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .canvas-container {
+            background: #f5f5f5;
+            border: 3px solid #667eea;
+            border-radius: 15px;
+            padding: 10px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            background: white;
+            cursor: crosshair;
+            border-radius: 10px;
+            touch-action: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 120px;
+        }
+
+        .btn-clear {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn-predict {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-predict:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-predict:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .prediction-result {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .predicted-digit {
+            font-size: 72px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .confidence {
+            font-size: 18px;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .confidence-bar {
+            background: #e0e0e0;
+            border-radius: 10px;
+            height: 10px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+
+        .probabilities {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-top: 20px;
+        }
+
+        .prob-item {
+            background: white;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .prob-digit {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .prob-value {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #856404;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-size: 16px;
+            padding: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .predicted-digit {
+                font-size: 56px;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .probabilities {
+                grid-template-columns: repeat(5, 1fr);
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✍️ MNIST Digit Recognition</h1>
+        <p class="subtitle">Draw a digit (0-9) and let AI predict it!</p>
+
+        <div class="instructions">
+            <strong>Instructions:</strong> Draw a digit in the canvas below using your mouse or touch. Make it large and centered for best results!
+        </div>
+        <br>
+
+        <div class="canvas-container">
+            <canvas id="drawingCanvas" width="280" height="280"></canvas>
+        </div>
+
+        <div class="controls">
+            <button class="btn-clear" onclick="clearCanvas()">Clear Canvas</button>
+            <button class="btn-predict" id="predictBtn" onclick="predictDigit()">Predict Digit</button>
+        </div>
+
+        <div class="prediction-result" id="result" style="display: none;">
+            <div style="font-size: 18px; color: #666; margin-bottom: 5px;">Predicted Digit:</div>
+            <div class="predicted-digit" id="predictedDigit">-</div>
+            <div class="confidence">
+                Confidence: <strong id="confidenceValue">0%</strong>
+            </div>
+            <div class="confidence-bar">
+                <div class="confidence-fill" id="confidenceFill" style="width: 0%"></div>
+            </div>
+            <div class="probabilities" id="probabilities"></div>
+        </div>
+
+        <div class="loading" id="loading">Loading model...</div>
+    </div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let session = null;
+
+        // Initialize canvas
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 20;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Load ONNX model
+        async function loadModel() {
+            try {
+                document.getElementById('loading').textContent = 'Loading AI model...';
+                
+                // Note: Replace this URL with your actual model file
+                // For local testing, serve the model file from the same directory
+                session = await ort.InferenceSession.create('mnist_model.onnx');
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('predictBtn').disabled = false;
+                console.log('Model loaded successfully!');
+            } catch (error) {
+                document.getElementById('loading').textContent = 
+                    'Error: Please place mnist_model.onnx in the same folder as this HTML file';
+                document.getElementById('loading').style.color = '#ff6b6b';
+                console.error('Error loading model:', error);
+            }
+        }
+
+        // Drawing functions
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            let clientX, clientY;
+            
+            if (e.touches && e.touches[0]) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            const x = (clientX - rect.left) * scaleX;
+            const y = (clientY - rect.top) * scaleY;
+            
+            return { x, y };
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const coords = getCoordinates(e);
+            
+            ctx.beginPath();
+            ctx.moveTo(coords.x, coords.y);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            
+            const coords = getCoordinates(e);
+            
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+            ctx.beginPath();
+        }
+
+        // Mouse events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Touch events
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', stopDrawing);
+
+        function clearCanvas() {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('result').style.display = 'none';
+        }
+
+        // Preprocess canvas for MNIST
+        function preprocessCanvas() {
+            // Get image data
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Create a temporary canvas for resizing to 28x28
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 28;
+            tempCanvas.height = 28;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Draw resized image
+            tempCtx.drawImage(canvas, 0, 0, 28, 28);
+            const resizedData = tempCtx.getImageData(0, 0, 28, 28);
+            
+            // Convert to grayscale and normalize (0-1)
+            const input = new Float32Array(28 * 28);
+            for (let i = 0; i < resizedData.data.length; i += 4) {
+                const avg = (resizedData.data[i] + resizedData.data[i + 1] + resizedData.data[i + 2]) / 3;
+                // Invert (MNIST expects white digit on black background)
+                input[i / 4] = (255 - avg) / 255.0;
+            }
+            
+            // Normalize using MNIST mean and std
+            const mean = 0.1307;
+            const std = 0.3081;
+            for (let i = 0; i < input.length; i++) {
+                input[i] = (input[i] - mean) / std;
+            }
+            
+            return input;
+        }
+
+        // Predict digit
+        async function predictDigit() {
+            if (!session) {
+                alert('Model not loaded yet. Please wait...');
+                return;
+            }
+
+            try {
+                // Preprocess the drawing
+                const input = preprocessCanvas();
+                
+                // Create tensor (shape: [1, 1, 28, 28])
+                const tensor = new ort.Tensor('float32', input, [1, 1, 28, 28]);
+                
+                // Run inference
+                const feeds = { input: tensor };
+                const results = await session.run(feeds);
+                const output = results.output.data;
+                
+                // Apply softmax to get probabilities
+                const expScores = Array.from(output).map(Math.exp);
+                const sumExp = expScores.reduce((a, b) => a + b, 0);
+                const probabilities = expScores.map(score => score / sumExp);
+                
+                // Get prediction
+                const predictedClass = probabilities.indexOf(Math.max(...probabilities));
+                const confidence = probabilities[predictedClass] * 100;
+                
+                // Display results
+                displayPrediction(predictedClass, confidence, probabilities);
+                
+            } catch (error) {
+                console.error('Prediction error:', error);
+                alert('Error making prediction. Check console for details.');
+            }
+        }
+
+        function displayPrediction(digit, confidence, probabilities) {
+            document.getElementById('predictedDigit').textContent = digit;
+            document.getElementById('confidenceValue').textContent = confidence.toFixed(1) + '%';
+            document.getElementById('confidenceFill').style.width = confidence + '%';
+            
+            // Show all probabilities
+            const probContainer = document.getElementById('probabilities');
+            probContainer.innerHTML = '';
+            probabilities.forEach((prob, idx) => {
+                const probItem = document.createElement('div');
+                probItem.className = 'prob-item';
+                if (idx === digit) {
+                    probItem.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                    probItem.style.color = 'white';
+                }
+                probItem.innerHTML = `
+                    <div class="prob-digit" style="${idx === digit ? 'color: white' : ''}">${idx}</div>
+                    <div class="prob-value" style="${idx === digit ? 'color: white' : ''}">${(prob * 100).toFixed(1)}%</div>
+                `;
+                probContainer.appendChild(probItem);
+            });
+            
+            document.getElementById('result').style.display = 'block';
+        }
+
+        // Load model on page load
+        loadModel();
+    </script>
+</body>
+</html>
